@@ -1,35 +1,33 @@
 package main
 
-import (
-	"slices"
-)
-
 type Queue[T comparable] interface {
 	Front() (T, bool)
 	Back() (T, bool)
-	Enqueue(value T)
+	Enqueue(values ...T)
 	Dequeue() (T, bool)
 	Size() int
 }
 
 type ArrayQueue[T comparable] struct {
-	array []T
+	array    []T
+	len, cap int
 }
 
 func NewQueue[T comparable]() *ArrayQueue[T] {
 	return &ArrayQueue[T]{
 		array: make([]T, 0),
+		len:   0,
+		cap:   0,
 	}
 }
 
 func (q *ArrayQueue[T]) Size() int {
-	return len(q.array)
+	return q.len
 }
 
 func (q *ArrayQueue[T]) Front() (T, bool) {
-	var front T
-
-	if len(q.array) == 0 {
+	if q.len == 0 {
+		var front T
 		return front, false
 	}
 
@@ -37,49 +35,57 @@ func (q *ArrayQueue[T]) Front() (T, bool) {
 }
 
 func (q *ArrayQueue[T]) Back() (T, bool) {
-	var back T
-
-	if len(q.array) == 0 {
+	if q.len == 0 {
+		var back T
 		return back, false
 	}
 
-	ind := len(q.array) - 1
+	ind := q.len - 1
 	return q.array[ind], true
 }
 
-func (q *ArrayQueue[T]) Enqueue(value T) {
-	capacity := cap(q.array)
-	length := len(q.array)
+// Adds one or more elements to the end of the queue.
+// If the current capacity isn't enough, it is doubled.
+func (q *ArrayQueue[T]) Enqueue(values ...T) {
+	if len(values) == 0 {
+		return
+	}
 
-	if capacity == length {
-		newCapacity := max(capacity*2, 1)
-		extendedArray := make([]T, length, newCapacity)
+	if q.cap <= q.len+len(values) {
+		newCapacity := (q.len + len(values)) * 2
+		extendedArray := make([]T, q.len, newCapacity)
 		copy(extendedArray, q.array)
 		q.array = extendedArray
 	}
 
-	q.array = append(q.array, value)
+	q.array = append(q.array, values...)
+	q.len = len(q.array)
+	q.cap = cap(q.array)
 }
 
+// Removes and returns the front element from the queue.
+// Whenever the length falls below 25% of the capacity,
+// the queue shrinks to half of its current capacity.
 func (q *ArrayQueue[T]) Dequeue() (T, bool) {
-	capacity := cap(q.array)
-	length := len(q.array)
+	var (
+		value T
+		ok    bool
+	)
 
-	var value T
-	var ok bool = false
+	if q.len == 0 {
+		return value, ok
+	}
 
-	if length > 0 {
-		value = q.array[0]
-		q.array = slices.Delete(q.array, 0, 1)
-		ok = true
-		length = len(q.array)
+	value = q.array[0]
+	q.array = q.array[1:]
+	ok = true
+	q.len = len(q.array)
 
-		if length < capacity/4 {
-			shrinkedArray := make([]T, length, capacity/2)
-			copy(shrinkedArray, q.array)
-			q.array = shrinkedArray
-		}
-
+	if q.len < q.cap/4 {
+		shrinkedArray := make([]T, q.len, q.cap/2)
+		copy(shrinkedArray, q.array)
+		q.array = shrinkedArray
+		q.cap = cap(q.array)
 	}
 
 	return value, ok
