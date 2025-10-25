@@ -1,18 +1,23 @@
 package main
 
 import (
+	"log"
+	stdurl "net/url"
+	"strings"
 	"sync"
 )
 
-type Worker interface {
-	Work(frontier Queue[string]) error
-}
-
+// The goal here is to have one data structure that stitch
+// together all the components the crawler workers will need
+// to perform there task.
+// Its also its responsability to handle orchestrating the workers.
 type Master struct {
 	frontier  Queue[string]
 	fetcher   Fetcher
 	parser    Parser
 	persister Persister
+	visited   map[string]struct{}
+	ch        chan string
 	mu        sync.Mutex
 	wg        sync.WaitGroup
 }
@@ -35,18 +40,12 @@ func NewMaster(frontier Queue[string], fetcher Fetcher, parser Parser, persister
 // dones't consider for how much urls exist in the queue
 // in order to have a simple retry mechanism and not to
 // worry about when to stop crawling.
-func (master *Master) fireWorkers(limit int) {
+func (master *Master) FireWorkers(limit int) {
+	defer close(master.ch)
+
 	log.Println("Starting to crawl with", limit, "workers")
-
-	frontierLength := master.frontier.Size()
-	visitedLength := len(master.visited)
-
-	for frontierLength > 0 && visitedLength <= limit {
-		log.Println("___________________________________________________")
-		log.Println("Frontier Length", frontierLength)
-		log.Println("Visited Length", visitedLength)
-		log.Println("___________________________________________________")
-
+	master.wg.Add(limit)
+	for i := 1; i <= limit; {
 		master.mu.Lock()
 		url, ok := master.frontier.Dequeue()
 		if !ok {
@@ -63,43 +62,27 @@ func (master *Master) fireWorkers(limit int) {
 		}
 		master.mu.Unlock()
 
-
-		master.wg.Add(1)
-		go func() {
+		go func(master *Master, url string) {
 			defer master.wg.Done()
 			crawler := Crawler{
 				master: master,
 			}
 
 			url, err := crawler.Work()
-			if err != nil {
-				master.mu.Lock()
-				_, ok := master.visited[url]
-				master.mu.Unlock()
 
-				if strings.TrimSpace(url) == "" || ok {
+			if err != nil {
+				if strings.TrimSpace(url) == "" {
 					return
 				}
 
 				master.mu.Lock()
 				master.frontier.Enqueue(url)
 				master.mu.Unlock()
-
 			}
-		}()
+		}(master, url)
 
-		// Profilling
-		// f, err := os.Create("crawler.pprof")
-		// if err != nil {
-		// 	log.Panicln("Error occured while creating the file", err)
-		// }
-		// defer f.Close()
-		// log.Println("Profile file was created successfully")
-		// // pprof.WriteHeapProfile(f)
-		// pprof.Lookup("goroutine").WriteTo(f, 0)
-
-		frontierLength = master.frontier.Size()
-		visitedLength = len(master.visited)
+		master.ch <- url
+		i++
 	}
 
 	master.wg.Wait()
@@ -117,21 +100,7 @@ type Crawler struct {
 // for each worker.
 func (crawler *Crawler) Work() (string, error) {
 	master := crawler.master
-
 	url := <-master.ch
-
-	/*
-		if !ok {
-			return "", errors.New("The queue is Empty! no work to be done.")
-		}
-
-		_, ok = master.visited[url]
-			master.mu.Unlock()
-			if ok {
-				log.Println(ok)
-				return "", nil
-			}
-	*/
 
 	log.Println("Worker", &crawler, "started processing", url)
 	html, err := master.fetcher.Fetch(url)
@@ -162,10 +131,6 @@ func (crawler *Crawler) Work() (string, error) {
 
 	master.mu.Lock()
 	master.visited[url] = struct{}{}
-	log.Println("___________________________________________________")
-	log.Println(master.visited)
-	log.Println(master.frontier)
-	log.Println("___________________________________________________")
 	master.mu.Unlock()
 
 	return url, nil

@@ -1,27 +1,20 @@
 package main
 
 import (
-	"fmt"
+	"log"
 )
 
 func main() {
-	var q Queue[int] = NewQueue[int]()
-	for i := range 10 {
-		q.Enqueue(i)
-		v, ok := q.Back()
-
-		if ok {
-			fmt.Printf("Back of the queue %v, its size %v\n", v, q.Size())
-		}
+	persister, err := NewSqlitePersister("./data/webpages.db", "webpages")
+	if err != nil {
+		log.Fatalln("Failed to establish a connection to the database", err)
 	}
 
-	for i := range 10 {
-		v, ok := q.Front()
-		if ok {
-			fmt.Printf("At iteration %v Front is %v\n", i+1, v)
-			q.Dequeue()
-		}
-	}
+	parser := &HTMLParser{}
+	fetcher := &SimpleFetcher{}
+	frontier := NewQueue[string]()
+	frontier.Enqueue("https://go.dev/doc/")
 
-	fmt.Println("Queue final state: ", q)
+	crawler := NewMaster(frontier, fetcher, parser, persister)
+	crawler.FireWorkers(10)
 }
