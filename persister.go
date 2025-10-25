@@ -44,6 +44,12 @@ func NewSqlitePersister(file string, table string) (*SqlitePersister, error) {
 	}
 	log.Println("Database connection was established successfully")
 
+	err = initializeDB(dbc, table)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
 	return &SqlitePersister{
 		dbc:   dbc,
 		table: table,
@@ -51,23 +57,20 @@ func NewSqlitePersister(file string, table string) (*SqlitePersister, error) {
 }
 
 func (persister *SqlitePersister) Save(uri string, text string, metadata string) error {
-	err := initializeDB(persister.dbc, persister.table)
-	if err != nil {
-		log.Println(err)
-		return err
-	}
-
 	query := fmt.Sprintf(
-		"INSERT INTO %q(uri, text, metadata) VALUES(%q, %q, %q)",
+		"INSERT INTO %q(uri, text, metadata) VALUES(?, ?, ?)",
 		persister.table,
-		uri,
-		text,
-		metadata,
 	)
 
-	_, err = persister.dbc.db.Exec(query)
+	stmt, err := persister.dbc.db.Prepare(query)
 	if err != nil {
-		log.Println("")
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(uri, text, metadata)
+	if err != nil {
+		log.Println(err)
 		return err
 	}
 	log.Println(uri, "was inserted successfully.")
