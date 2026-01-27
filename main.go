@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 )
 
 func main() {
-	persister, err := NewSqlitePersister("./data/webpages.db", "webpages")
+	persister, err := Init(context.Background(), "file:./data/webpages.db")
 	if err != nil {
 		log.Fatalln("Failed to establish a connection to the database", err)
 	}

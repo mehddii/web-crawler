@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	stdurl "net/url"
 	"strings"
@@ -124,7 +125,12 @@ func (crawler *Crawler) Work() (string, error) {
 		return "", err
 	}
 
-	err = master.persister.Save(url, text, parsedUrl.Host)
+	doc := WebDocument{
+		URI:      url,
+		Text:     text,
+		Metadata: parsedUrl.Host,
+	}
+	err = master.persister.Persist(context.TODO(), doc)
 	if err != nil {
 		return "", err
 	}
