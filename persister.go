@@ -1,107 +1,62 @@
 package main
 
 import (
+	"context"
 	"database/sql"
-	"errors"
-	"fmt"
-	"log"
 
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
 
+type WebDocument struct {
+	URI      string
+	Text     string
+	Metadata string // --todo: should probably have its own type
+}
+
 type Persister interface {
-	Save(uri string, text string, metadata string) error
+	Persist(ctx context.Context, doc WebDocument) error
 }
 
-type DBConnection struct {
-	file string
-	db   *sql.DB
+type SQLPersister struct {
+	DB *sql.DB
 }
 
-func NewConnection(file string) (*DBConnection, error) {
-	db, err := sql.Open("sqlite3", file)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &DBConnection{
-		file: file,
-		db:   db,
-	}, nil
-}
-
-type SqlitePersister struct {
-	dbc   *DBConnection
-	table string
-}
-
-func NewSqlitePersister(file string, table string) (*SqlitePersister, error) {
-	dbc, err := NewConnection(file)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-	log.Println("Database connection was established successfully")
-
-	err = initializeDB(dbc, table)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-
-	return &SqlitePersister{
-		dbc:   dbc,
-		table: table,
-	}, nil
-}
-
-func (persister *SqlitePersister) Save(uri string, text string, metadata string) error {
-	query := fmt.Sprintf(
-		"INSERT INTO %q(uri, text, metadata) VALUES(?, ?, ?)",
-		persister.table,
-	)
-
-	stmt, err := persister.dbc.db.Prepare(query)
+func (dbc *SQLPersister) Persist(ctx context.Context, doc WebDocument) error {
+	id, err := uuid.NewV7()
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 
-	_, err = stmt.Exec(uri, text, metadata)
-	if err != nil {
-		log.Println(err)
-		return err
-	}
-	log.Println(uri, "was inserted successfully.")
+	_, err = dbc.DB.ExecContext(ctx, `
+		INSERT INTO documents(id, uri, text, metadata)	
+		VALUES (?, ?, ?, ?);
+	`, id, doc.URI, doc.Text, doc.Metadata)
 
 	return nil
 }
 
-func initializeDB(dbc *DBConnection, table string) error {
-	if dbc == nil {
-		return errors.New("No Database connection detected. Operation failed.")
-	}
-
-	err := dbc.db.Ping()
+func Init(ctx context.Context, source string) (Persister, error) {
+	db, err := sql.Open("sqlite3", source)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %q (
-			id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+	if err = db.PingContext(ctx); err != nil {
+		return nil, err
+	}
+
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS documents (
+			id TEXT PRIMARY KEY,
 			uri TEXT NOT NULL,
 			text TEXT,
 			metadata TEXT
 		);
-	`, table)
-
-	_, err = dbc.db.Exec(query)
+	`)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	log.Printf("Table %s was created successfully", table)
 
-	return nil
+	return &SQLPersister{DB: db}, nil
 }
