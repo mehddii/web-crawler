@@ -6,7 +6,9 @@ import (
 )
 
 func main() {
-	persister, err := Init(context.Background(), "file:./data/webpages.db")
+	connStr := GetConnStr()
+
+	persister, err := Init(context.Background(), connStr)
 	if err != nil {
 		log.Fatalln("Failed to establish a connection to the database", err)
 	}

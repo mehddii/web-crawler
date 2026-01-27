@@ -5,7 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 )
 
 type WebDocument struct {
@@ -29,15 +29,18 @@ func (dbc *SQLPersister) Persist(ctx context.Context, doc WebDocument) error {
 	}
 
 	_, err = dbc.DB.ExecContext(ctx, `
-		INSERT INTO documents(id, uri, text, metadata)	
-		VALUES (?, ?, ?, ?);
+		INSERT INTO documents (id, uri, text, metadata)	
+		VALUES ($1, $2, $3, $4);
 	`, id, doc.URI, doc.Text, doc.Metadata)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func Init(ctx context.Context, source string) (Persister, error) {
-	db, err := sql.Open("sqlite3", source)
+	db, err := sql.Open("postgres", source)
 	if err != nil {
 		return nil, err
 	}
